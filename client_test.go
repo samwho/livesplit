@@ -21,7 +21,7 @@ func TestDurationAndTimeParsing(t *testing.T) {
 		{time: "01:00:00", duration: time.Duration(1) * time.Hour},
 		{time: "02:00:00", duration: time.Duration(2) * time.Hour},
 		{time: "02:01:01", duration: time.Duration(2)*time.Hour + time.Duration(1)*time.Minute + time.Duration(1)*time.Second},
-		{time: "0.001", duration: time.Duration(1) * time.Millisecond},
+		{time: "0.01", duration: time.Duration(10) * time.Millisecond},
 
 		{time: "-1", duration: time.Duration(-1) * time.Second},
 		{time: "-2", duration: time.Duration(-2) * time.Second},
@@ -30,7 +30,7 @@ func TestDurationAndTimeParsing(t *testing.T) {
 		{time: "-01:00:00", duration: time.Duration(-1) * time.Hour},
 		{time: "-02:00:00", duration: time.Duration(-2) * time.Hour},
 		{time: "-02:01:01", duration: time.Duration(-2)*time.Hour + time.Duration(-1)*time.Minute + time.Duration(-1)*time.Second},
-		{time: "-0.001", duration: time.Duration(-1) * time.Millisecond},
+		{time: "-0.01", duration: time.Duration(-10) * time.Millisecond},
 	}
 	for _, tC := range testCases {
 		tC := tC

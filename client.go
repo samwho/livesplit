@@ -156,7 +156,7 @@ func (client *Client) GetCurrentTimerPhase() (TimerPhase, error) {
 
 func DurationToString(t time.Duration) string {
 	if math.Abs(t.Seconds()) < 60.0 {
-		return strings.TrimSuffix(fmt.Sprintf("%.3f", t.Seconds()), ".000")
+		return strings.TrimSuffix(fmt.Sprintf("%.2f", t.Seconds()), ".00")
 	}
 
 	negative := ""
@@ -172,8 +172,8 @@ func DurationToString(t time.Duration) string {
 
 	seconds += t.Seconds() - float64(int64(t.Seconds()))
 
-	ret := fmt.Sprintf("%02d:%02d:%06.3f", hours, minutes, seconds)
-	ret = strings.TrimSuffix(ret, ".000")
+	ret := fmt.Sprintf("%02d:%02d:%05.2f", hours, minutes, seconds)
+	ret = strings.TrimSuffix(ret, ".00")
 	ret = strings.TrimPrefix(ret, "00:")
 
 	return fmt.Sprintf("%s%s", negative, ret)
