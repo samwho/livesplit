@@ -8,10 +8,7 @@ import (
 )
 
 func main() {
-	client, err := livesplit.NewClient()
-	if err != nil {
-		panic(err)
-	}
+	client := livesplit.NewClient()
 	defer client.Close()
 
 	phase, err := client.GetCurrentTimerPhase()

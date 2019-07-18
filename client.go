@@ -34,17 +34,12 @@ type Client struct {
 	sock net.Conn
 }
 
-func NewClient() (*Client, error) {
+func NewClient() *Client {
 	return NewClientWithPort(port)
 }
 
-func NewClientWithPort(port int) (*Client, error) {
-	client := &Client{port: port}
-	if err := client.establishConnection(); err != nil {
-		return nil, err
-	}
-
-	return client, nil
+func NewClientWithPort(port int) *Client {
+	return &Client{port: port}
 }
 
 func (client *Client) establishConnection() error {
@@ -61,7 +56,10 @@ func (client *Client) establishConnection() error {
 }
 
 func (client *Client) Close() error {
-	return client.sock.Close()
+	if client.sock != nil {
+		return client.sock.Close()
+	}
+	return nil
 }
 
 func (client *Client) StartTimer() error {
@@ -221,6 +219,13 @@ func StringToDuration(t string) (time.Duration, error) {
 func (client *Client) send(cmd []string) error {
 	m.Lock()
 	defer m.Unlock()
+
+	if client.sock == nil {
+		if err := client.establishConnection(); err != nil {
+			return err
+		}
+	}
+
 	client.sock.SetDeadline(time.Now().Add(timeout))
 	_, err := fmt.Fprintf(client.sock, "%s\r\n", strings.Join(cmd, " "))
 	if err != nil {
@@ -237,6 +242,12 @@ func (client *Client) send(cmd []string) error {
 }
 
 func (client *Client) recv() (string, error) {
+	if client.sock == nil {
+		if err := client.establishConnection(); err != nil {
+			return "", err
+		}
+	}
+
 	var s string
 	var err error
 
