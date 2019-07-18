@@ -30,6 +30,7 @@ const (
 )
 
 type Client struct {
+	port int
 	sock net.Conn
 }
 
@@ -38,14 +39,25 @@ func NewClient() (*Client, error) {
 }
 
 func NewClientWithPort(port int) (*Client, error) {
-	sock, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), timeout)
-	if err != nil {
+	client := &Client{port: port}
+	if err := client.establishConnection(); err != nil {
 		return nil, err
 	}
 
-	return &Client{
-		sock: sock,
-	}, nil
+	return client, nil
+}
+
+func (client *Client) establishConnection() error {
+	if client.sock != nil {
+		client.sock.Close()
+	}
+
+	sock, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), timeout)
+	if err != nil {
+		return err
+	}
+	client.sock = sock
+	return nil
 }
 
 func (client *Client) Close() error {
@@ -211,17 +223,35 @@ func (client *Client) send(cmd []string) error {
 	defer m.Unlock()
 	client.sock.SetDeadline(time.Now().Add(timeout))
 	_, err := fmt.Fprintf(client.sock, "%s\r\n", strings.Join(cmd, " "))
+	if err != nil {
+		if reconnectErr := client.establishConnection(); reconnectErr != nil {
+			return err
+		}
+		_, err := fmt.Fprintf(client.sock, "%s\r\n", strings.Join(cmd, " "))
+		if err != nil {
+			return err
+		}
+	}
 	client.sock.SetDeadline(time.Time{})
 	return err
 }
 
 func (client *Client) recv() (string, error) {
+	var s string
+	var err error
+
 	m.Lock()
 	defer m.Unlock()
 	client.sock.SetDeadline(time.Now().Add(timeout))
-	s, err := bufio.NewReader(client.sock).ReadString('\n')
+	s, err = bufio.NewReader(client.sock).ReadString('\n')
 	if err != nil {
-		return "", err
+		if reconnectErr := client.establishConnection(); reconnectErr != nil {
+			return "", err
+		}
+		s, err = bufio.NewReader(client.sock).ReadString('\n')
+		if err != nil {
+			return "", err
+		}
 	}
 	client.sock.SetDeadline(time.Time{})
 	return strings.TrimSuffix(s, "\r\n"), nil
