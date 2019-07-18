@@ -7,12 +7,17 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	port    = 16834
 	timeout = time.Duration(2) * time.Second
+)
+
+var (
+	m sync.Mutex
 )
 
 type TimerPhase string
@@ -202,15 +207,23 @@ func StringToDuration(t string) (time.Duration, error) {
 }
 
 func (client *Client) send(cmd []string) error {
+	m.Lock()
+	defer m.Unlock()
+	client.sock.SetDeadline(time.Now().Add(timeout))
 	_, err := fmt.Fprintf(client.sock, "%s\r\n", strings.Join(cmd, " "))
+	client.sock.SetDeadline(time.Time{})
 	return err
 }
 
 func (client *Client) recv() (string, error) {
+	m.Lock()
+	defer m.Unlock()
+	client.sock.SetDeadline(time.Now().Add(timeout))
 	s, err := bufio.NewReader(client.sock).ReadString('\n')
 	if err != nil {
 		return "", err
 	}
+	client.sock.SetDeadline(time.Time{})
 	return strings.TrimSuffix(s, "\r\n"), nil
 }
 
