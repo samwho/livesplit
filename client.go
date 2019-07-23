@@ -64,11 +64,7 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	return NewClientWithPort(port)
-}
-
-func NewClientWithPort(port int) *Client {
-	return &Client{sock: newSocket(port), callbacks: make(map[string][]func(cmd []string) error)}
+	return &Client{sock: newSocket(), callbacks: make(map[string][]func(cmd []string) error)}
 }
 
 func (client *Client) OnClose(callback func(cmd []string) error) {

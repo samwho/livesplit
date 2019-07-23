@@ -7,20 +7,20 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Microsoft/go-winio"
 )
 
 const (
-	port    = 16834
-	timeout = 20 * time.Millisecond
+	timeout = time.Duration(20) * time.Millisecond
 )
 
 type socket struct {
-	port int
 	sock net.Conn
 }
 
-func newSocket(port int) *socket {
-	return &socket{port: port}
+func newSocket() *socket {
+	return &socket{}
 }
 
 func (s *socket) establishConnectionIfNecessary() error {
@@ -39,7 +39,7 @@ func (s *socket) reestablishConnection() error {
 	}
 
 	logger.Printf("establishing new livesplit connection")
-	sock, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), timeout)
+	sock, err := winio.DialPipe("\\\\.\\pipe\\LiveSplit", nil)
 	if err != nil {
 		logger.Printf("error establishing connection: %v", err)
 		return err
