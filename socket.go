@@ -12,7 +12,7 @@ import (
 
 const (
 	port    = 16834
-	timeout = 5 * time.Millisecond
+	timeout = 50 * time.Millisecond
 )
 
 type socket struct {
@@ -24,7 +24,16 @@ func newSocket(port int) *socket {
 	return &socket{port: port}
 }
 
-func (s *socket) establishConnection() error {
+func (s *socket) establishConnectionIfNecessary() error {
+	if s.sock == nil {
+		if err := s.reestablishConnection(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *socket) reestablishConnection() error {
 	if err := s.Close(); err != nil {
 		log.Printf("error closing livesplit socket, ignoring as we're about to create a new connection: %v", err)
 	}
@@ -50,62 +59,43 @@ func (s *socket) Close() error {
 }
 
 func (s *socket) send(cmd []string) error {
-	if s.sock == nil {
-		if err := s.establishConnection(); err != nil {
-			return err
-		}
+	if err := s.establishConnectionIfNecessary(); err != nil {
+		return err
 	}
 
-	if err := s.sock.SetDeadline(time.Now().Add(timeout)); err != nil {
-		log.Printf("unable to set send deadline: %v", err)
-	}
-	defer func() {
-		if err := s.sock.SetDeadline(time.Time{}); err != nil {
-			log.Printf("unable to set send deadline: %v", err)
-		}
-	}()
+	revert := s.setDeadlines(timeout)
+	defer revert()
 
 	_, err := fmt.Fprintf(s.sock, "%s\r\n", strings.Join(cmd, " "))
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			log.Printf("livesplit write timeout: %v", err)
+		if herr := s.handleTimeout(err); herr != nil {
+			return herr
+		}
+
+		if reconnectErr := s.reestablishConnection(); reconnectErr != nil {
 			return err
 		}
 
-		if reconnectErr := s.establishConnection(); reconnectErr != nil {
-			return err
-		}
-
-		_, retryErr := fmt.Fprintf(s.sock, "%s\r\n", strings.Join(cmd, " "))
-		err = retryErr
+		_, err = fmt.Fprintf(s.sock, "%s\r\n", strings.Join(cmd, " "))
 	}
 	return err
 }
 
 func (s *socket) recv() (string, error) {
-	if s.sock == nil {
-		if err := s.establishConnection(); err != nil {
-			return "", err
-		}
+	if err := s.establishConnectionIfNecessary(); err != nil {
+		return "", err
 	}
 
-	if err := s.sock.SetDeadline(time.Now().Add(timeout)); err != nil {
-		log.Printf("unable to set send deadline: %v", err)
-	}
-	defer func() {
-		if err := s.sock.SetDeadline(time.Time{}); err != nil {
-			log.Printf("unable to set send deadline: %v", err)
-		}
-	}()
+	revert := s.setDeadlines(timeout)
+	defer revert()
 
 	r, err := bufio.NewReader(s.sock).ReadString('\n')
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			log.Printf("livesplit read timeout: %v", err)
-			return "", err
+		if herr := s.handleTimeout(err); herr != nil {
+			return "", herr
 		}
 
-		if reconnectErr := s.establishConnection(); reconnectErr != nil {
+		if reconnectErr := s.reestablishConnection(); reconnectErr != nil {
 			return "", err
 		}
 
@@ -113,7 +103,6 @@ func (s *socket) recv() (string, error) {
 		if retryErr != nil {
 			return "", retryErr
 		}
-
 		r = retryR
 	}
 
@@ -142,4 +131,27 @@ func (s *socket) sendAndRecvInt(cmd []string) (int, error) {
 		return 0, err
 	}
 	return strconv.Atoi(r)
+}
+
+func (s *socket) handleTimeout(err error) error {
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		log.Printf("livesplit timeout: %v", err)
+		if err := s.reestablishConnection(); err != nil {
+			log.Printf("error reestablishing connection after timeout: %v", err)
+			return err
+		}
+		return nil
+	}
+	return nil
+}
+
+func (s *socket) setDeadlines(timeout time.Duration) func() {
+	if err := s.sock.SetDeadline(time.Now().Add(timeout)); err != nil {
+		log.Printf("unable to set deadline: %v", err)
+	}
+	return func() {
+		if err := s.sock.SetDeadline(time.Time{}); err != nil {
+			log.Printf("unable to set deadline: %v", err)
+		}
+	}
 }
