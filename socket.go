@@ -12,7 +12,7 @@ import (
 
 const (
 	port    = 16834
-	timeout = 100 * time.Millisecond
+	timeout = 5 * time.Millisecond
 )
 
 type socket struct {
