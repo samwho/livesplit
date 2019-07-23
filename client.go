@@ -84,12 +84,23 @@ func (client *Client) StartTimer() error {
 	return client.cmd(starttimer)
 }
 
-func (client *Client) OnStartOrSplit(callback func(cmd []string) error) {
-	client.registerCallback(startorsplit, callback)
-}
-
 func (client *Client) StartOrSplit() error {
-	return client.cmd(startorsplit)
+	phase, err := client.GetCurrentTimerPhase()
+	if err != nil {
+		return err
+	}
+
+	if err := client.cmd(startorsplit); err != nil {
+		return err
+	}
+
+	if phase == Running {
+		client.callCallbacks([]string{starttimer})
+	} else {
+		client.callCallbacks([]string{split})
+	}
+
+	return nil
 }
 
 func (client *Client) OnSplit(callback func(cmd []string) error) {
