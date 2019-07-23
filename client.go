@@ -353,11 +353,12 @@ func (client *Client) cmd(cmd ...string) error {
 	logger.Printf("cmd: %v", cmd)
 	client.m.Lock()
 	if err := client.sock.send(cmd); err != nil {
+		logger.Printf("cmd error: %v, %v", cmd, err)
 		client.m.Unlock()
 		return err
 	}
-	client.m.Unlock()
 	logger.Printf("cmd callbacks: %v", cmd)
+	client.m.Unlock()
 	client.callCallbacks(cmd)
 	return nil
 }
@@ -367,11 +368,12 @@ func (client *Client) cmdWithResult(cmd ...string) (string, error) {
 	client.m.Lock()
 	s, err := client.sock.sendAndRecv(cmd)
 	if err != nil {
+		logger.Printf("cmd error: %v, %v", cmd, err)
 		client.m.Unlock()
 		return "", err
 	}
-	client.m.Unlock()
 	logger.Printf("cmd callbacks: %v", cmd)
+	client.m.Unlock()
 	client.callCallbacks(cmd)
 	return s, nil
 }

@@ -3,7 +3,6 @@ package livesplit
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -26,6 +25,7 @@ func newSocket(port int) *socket {
 
 func (s *socket) establishConnectionIfNecessary() error {
 	if s.sock == nil {
+		logger.Printf("establishing connection")
 		if err := s.reestablishConnection(); err != nil {
 			return err
 		}
@@ -35,16 +35,16 @@ func (s *socket) establishConnectionIfNecessary() error {
 
 func (s *socket) reestablishConnection() error {
 	if err := s.Close(); err != nil {
-		log.Printf("error closing livesplit socket, ignoring as we're about to create a new connection: %v", err)
+		logger.Printf("error closing socket, ignoring as we're about to create a new connection: %v", err)
 	}
 
-	log.Printf("establishing new livesplit connection")
+	logger.Printf("establishing new livesplit connection")
 	sock, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), timeout)
 	if err != nil {
-		log.Printf("error establishing livesplit connection: %v", err)
+		logger.Printf("error establishing connection: %v", err)
 		return err
 	}
-	log.Printf("livesplit connection established")
+	logger.Printf("connection established")
 	s.sock = sock
 	return nil
 }
@@ -59,6 +59,7 @@ func (s *socket) Close() error {
 }
 
 func (s *socket) send(cmd []string) error {
+	logger.Printf("send: %v", cmd)
 	if err := s.establishConnectionIfNecessary(); err != nil {
 		return err
 	}
@@ -78,6 +79,7 @@ func (s *socket) send(cmd []string) error {
 }
 
 func (s *socket) recv() (string, error) {
+	logger.Printf("recv")
 	if err := s.establishConnectionIfNecessary(); err != nil {
 		return "", err
 	}
@@ -99,6 +101,7 @@ func (s *socket) recv() (string, error) {
 	}
 
 	ret := strings.TrimSuffix(r, "\r\n")
+	logger.Printf("recv'd: %v", ret)
 	return ret, nil
 }
 
@@ -127,11 +130,11 @@ func (s *socket) sendAndRecvInt(cmd []string) (int, error) {
 
 func (s *socket) setDeadlines(timeout time.Duration) func() {
 	if err := s.sock.SetDeadline(time.Now().Add(timeout)); err != nil {
-		log.Printf("unable to set deadline: %v", err)
+		logger.Printf("unable to set deadline: %v", err)
 	}
 	return func() {
 		if err := s.sock.SetDeadline(time.Time{}); err != nil {
-			log.Printf("unable to set deadline: %v", err)
+			logger.Printf("unable to set deadline: %v", err)
 		}
 	}
 }
