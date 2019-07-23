@@ -340,21 +340,23 @@ func StringToDuration(t string) (time.Duration, error) {
 
 func (client *Client) cmd(cmd ...string) error {
 	client.m.Lock()
-	defer client.m.Unlock()
 	if err := client.sock.send(cmd); err != nil {
+		client.m.Unlock()
 		return err
 	}
+	client.m.Unlock()
 	client.callCallbacks(cmd)
 	return nil
 }
 
 func (client *Client) cmdWithResult(cmd ...string) (string, error) {
 	client.m.Lock()
-	defer client.m.Unlock()
 	s, err := client.sock.sendAndRecv(cmd)
 	if err != nil {
+		client.m.Unlock()
 		return "", err
 	}
+	client.m.Unlock()
 	client.callCallbacks(cmd)
 	return s, nil
 }
