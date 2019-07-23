@@ -51,6 +51,7 @@ func (s *socket) reestablishConnection() error {
 
 func (s *socket) Close() error {
 	if s.sock != nil {
+		logger.Printf("closing socket")
 		if err := s.sock.Close(); err != nil {
 			return err
 		}
@@ -61,6 +62,7 @@ func (s *socket) Close() error {
 func (s *socket) send(cmd []string) error {
 	logger.Printf("send: %v", cmd)
 	if err := s.establishConnectionIfNecessary(); err != nil {
+		logger.Printf("error establishing connection: %v", err)
 		return err
 	}
 
@@ -69,11 +71,18 @@ func (s *socket) send(cmd []string) error {
 
 	_, err := fmt.Fprintf(s.sock, "%s\r\n", strings.Join(cmd, " "))
 	if err != nil {
+		logger.Printf("error in send: %v", err)
+
 		if reconnectErr := s.reestablishConnection(); reconnectErr != nil {
+			logger.Printf("error reestablishing connection after error: %v", reconnectErr)
 			return err
 		}
 
+		logger.Printf("retrying send: %v", cmd)
 		_, err = fmt.Fprintf(s.sock, "%s\r\n", strings.Join(cmd, " "))
+		if err != nil {
+			logger.Printf("error retrying send: %v", err)
+		}
 	}
 	return err
 }
@@ -81,6 +90,7 @@ func (s *socket) send(cmd []string) error {
 func (s *socket) recv() (string, error) {
 	logger.Printf("recv")
 	if err := s.establishConnectionIfNecessary(); err != nil {
+		logger.Printf("error establishing connection: %v", err)
 		return "", err
 	}
 
@@ -89,15 +99,11 @@ func (s *socket) recv() (string, error) {
 
 	r, err := bufio.NewReader(s.sock).ReadString('\n')
 	if err != nil {
+		logger.Printf("error in recv: %v", err)
 		if reconnectErr := s.reestablishConnection(); reconnectErr != nil {
-			return "", err
+			logger.Printf("error reestablishing connection after error: %v", reconnectErr)
 		}
-
-		retryR, retryErr := bufio.NewReader(s.sock).ReadString('\n')
-		if retryErr != nil {
-			return "", retryErr
-		}
-		r = retryR
+		return "", err
 	}
 
 	ret := strings.TrimSuffix(r, "\r\n")

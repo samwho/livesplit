@@ -350,30 +350,32 @@ func StringToDuration(t string) (time.Duration, error) {
 }
 
 func (client *Client) cmd(cmd ...string) error {
-	logger.Printf("cmd: %v", cmd)
 	client.m.Lock()
+	logger.Printf("locked for cmd: %v", cmd)
 	if err := client.sock.send(cmd); err != nil {
 		logger.Printf("cmd error: %v, %v", cmd, err)
 		client.m.Unlock()
 		return err
 	}
-	logger.Printf("cmd callbacks: %v", cmd)
+	logger.Printf("unlocking cmd: %v", cmd)
 	client.m.Unlock()
+	logger.Printf("running cmd callbacks: %v", cmd)
 	client.callCallbacks(cmd)
 	return nil
 }
 
 func (client *Client) cmdWithResult(cmd ...string) (string, error) {
-	logger.Printf("cmd: %v", cmd)
 	client.m.Lock()
+	logger.Printf("locked for cmd: %v", cmd)
 	s, err := client.sock.sendAndRecv(cmd)
 	if err != nil {
 		logger.Printf("cmd error: %v, %v", cmd, err)
 		client.m.Unlock()
 		return "", err
 	}
-	logger.Printf("cmd callbacks: %v", cmd)
+	logger.Printf("unlocking cmd: %v", cmd)
 	client.m.Unlock()
+	logger.Printf("running cmd callbacks: %v", cmd)
 	client.callCallbacks(cmd)
 	return s, nil
 }
