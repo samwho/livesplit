@@ -12,7 +12,7 @@ import (
 
 const (
 	port    = 16834
-	timeout = 50 * time.Millisecond
+	timeout = 20 * time.Millisecond
 )
 
 type socket struct {
@@ -68,10 +68,6 @@ func (s *socket) send(cmd []string) error {
 
 	_, err := fmt.Fprintf(s.sock, "%s\r\n", strings.Join(cmd, " "))
 	if err != nil {
-		if herr := s.handleTimeout(err); herr != nil {
-			return herr
-		}
-
 		if reconnectErr := s.reestablishConnection(); reconnectErr != nil {
 			return err
 		}
@@ -91,10 +87,6 @@ func (s *socket) recv() (string, error) {
 
 	r, err := bufio.NewReader(s.sock).ReadString('\n')
 	if err != nil {
-		if herr := s.handleTimeout(err); herr != nil {
-			return "", herr
-		}
-
 		if reconnectErr := s.reestablishConnection(); reconnectErr != nil {
 			return "", err
 		}
@@ -131,18 +123,6 @@ func (s *socket) sendAndRecvInt(cmd []string) (int, error) {
 		return 0, err
 	}
 	return strconv.Atoi(r)
-}
-
-func (s *socket) handleTimeout(err error) error {
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		log.Printf("livesplit timeout: %v", err)
-		if err := s.reestablishConnection(); err != nil {
-			log.Printf("error reestablishing connection after timeout: %v", err)
-			return err
-		}
-		return nil
-	}
-	return nil
 }
 
 func (s *socket) setDeadlines(timeout time.Duration) func() {

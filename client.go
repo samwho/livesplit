@@ -2,6 +2,7 @@ package livesplit
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"strconv"
@@ -9,6 +10,14 @@ import (
 	"sync"
 	"time"
 )
+
+var (
+	logger = log.New(ioutil.Discard, "livesplit", log.LstdFlags)
+)
+
+func Log() *log.Logger {
+	return logger
+}
 
 type TimerPhase string
 
@@ -67,12 +76,14 @@ func (client *Client) OnClose(callback func(cmd []string) error) {
 }
 
 func (client *Client) Close() error {
+	logger.Printf("close called")
 	if client.sock != nil {
 		if err := client.sock.Close(); err != nil {
 			return err
 		}
 	}
 	client.callCallbacks([]string{close})
+	logger.Printf("close completed")
 	return nil
 }
 
@@ -339,17 +350,20 @@ func StringToDuration(t string) (time.Duration, error) {
 }
 
 func (client *Client) cmd(cmd ...string) error {
+	logger.Printf("cmd: %v", cmd)
 	client.m.Lock()
 	if err := client.sock.send(cmd); err != nil {
 		client.m.Unlock()
 		return err
 	}
 	client.m.Unlock()
+	logger.Printf("cmd callbacks: %v", cmd)
 	client.callCallbacks(cmd)
 	return nil
 }
 
 func (client *Client) cmdWithResult(cmd ...string) (string, error) {
+	logger.Printf("cmd: %v", cmd)
 	client.m.Lock()
 	s, err := client.sock.sendAndRecv(cmd)
 	if err != nil {
@@ -357,6 +371,7 @@ func (client *Client) cmdWithResult(cmd ...string) (string, error) {
 		return "", err
 	}
 	client.m.Unlock()
+	logger.Printf("cmd callbacks: %v", cmd)
 	client.callCallbacks(cmd)
 	return s, nil
 }
@@ -384,7 +399,7 @@ func (client *Client) registerCallback(name string, callback func(cmd []string) 
 func (client *Client) callCallbacks(cmd []string) {
 	for _, callback := range client.callbacks[cmd[0]] {
 		if err := callback(cmd); err != nil {
-			log.Printf("error in callback for %s: %v", cmd[0], err)
+			logger.Printf("error in callback for %v: %v", cmd, err)
 		}
 	}
 }
