@@ -1,19 +1,13 @@
 package livesplit
 
 import (
-	"bufio"
 	"fmt"
+	"log"
 	"math"
-	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-)
-
-const (
-	port    = 16834
-	timeout = time.Duration(2) * time.Second
 )
 
 type TimerPhase string
@@ -25,10 +19,39 @@ const (
 	Paused     TimerPhase = "Paused"
 )
 
+const (
+	close                  = "close"
+	starttimer             = "starttimer"
+	startorsplit           = "startorsplit"
+	split                  = "split"
+	unsplit                = "unsplit"
+	skipsplit              = "skipsplit"
+	pause                  = "pause"
+	resume                 = "resume"
+	reset                  = "reset"
+	initgametime           = "initgametime"
+	setgametime            = "setgametime"
+	setloadingtimes        = "setloadingtimes"
+	pausegametime          = "pausegametime"
+	unpausegametime        = "unpausegametime"
+	setcomparison          = "setcomparison"
+	getdelta               = "getdelta"
+	getlastsplittime       = "getlastsplittime"
+	getcomparisonsplittime = "getcomparisonsplittime"
+	getcurrenttime         = "getcurrenttime"
+	getfinaltime           = "getfinaltime"
+	getpredictedtime       = "getpredictedtime"
+	getbestpossibletime    = "getbestpossibletime"
+	getsplitindex          = "getsplitindex"
+	getcurrentsplitname    = "getcurrentsplitname"
+	getprevioussplitname   = "getprevioussplitname"
+	getcurrenttimerphase   = "getcurrenttimerphase"
+)
+
 type Client struct {
-	m    sync.Mutex
-	port int
-	sock net.Conn
+	m         sync.Mutex
+	sock      *socket
+	callbacks map[string][]func(cmd []string) error
 }
 
 func NewClient() *Client {
@@ -36,177 +59,221 @@ func NewClient() *Client {
 }
 
 func NewClientWithPort(port int) *Client {
-	return &Client{port: port}
+	return &Client{sock: newSocket(port), callbacks: make(map[string][]func(cmd []string) error)}
 }
 
-func (client *Client) establishConnection() error {
-	if client.sock != nil {
-		client.sock.Close()
-	}
-
-	sock, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), timeout)
-	if err != nil {
-		return err
-	}
-	client.sock = sock
-	return nil
+func (client *Client) OnClose(callback func(cmd []string) error) {
+	client.registerCallback(close, callback)
 }
 
 func (client *Client) Close() error {
 	if client.sock != nil {
-		return client.sock.Close()
+		if err := client.sock.Close(); err != nil {
+			return err
+		}
 	}
+	client.callCallbacks([]string{close})
 	return nil
 }
 
+func (client *Client) OnStartTimer(callback func(cmd []string) error) {
+	client.registerCallback(starttimer, callback)
+}
+
 func (client *Client) StartTimer() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"starttimer"})
+	return client.cmd(starttimer)
+}
+
+func (client *Client) OnStartOrSplit(callback func(cmd []string) error) {
+	client.registerCallback(startorsplit, callback)
 }
 
 func (client *Client) StartOrSplit() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"startorsplit"})
+	return client.cmd(startorsplit)
+}
+
+func (client *Client) OnSplit(callback func(cmd []string) error) {
+	client.registerCallback(split, callback)
 }
 
 func (client *Client) Split() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"split"})
+	return client.cmd(split)
+}
+
+func (client *Client) OnUnsplit(callback func(cmd []string) error) {
+	client.registerCallback(unsplit, callback)
 }
 
 func (client *Client) Unsplit() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"unsplit"})
+	return client.cmd(unsplit)
+}
+
+func (client *Client) OnSkipSplit(callback func(cmd []string) error) {
+	client.registerCallback(skipsplit, callback)
 }
 
 func (client *Client) SkipSplit() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"skipsplit"})
+	return client.cmd(skipsplit)
+}
+
+func (client *Client) OnPause(callback func(cmd []string) error) {
+	client.registerCallback(pause, callback)
 }
 
 func (client *Client) Pause() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"pause"})
+	return client.cmd(pause)
+}
+
+func (client *Client) OnResume(callback func(cmd []string) error) {
+	client.registerCallback(resume, callback)
 }
 
 func (client *Client) Resume() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"resume"})
+	return client.cmd(resume)
+}
+
+func (client *Client) OnReset(callback func(cmd []string) error) {
+	client.registerCallback(reset, callback)
 }
 
 func (client *Client) Reset() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"reset"})
+	return client.cmd(reset)
+}
+
+func (client *Client) OnInitGameTime(callback func(cmd []string) error) {
+	client.registerCallback(initgametime, callback)
 }
 
 func (client *Client) InitGameTime() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"initgametime"})
+	return client.cmd(initgametime)
+}
+
+func (client *Client) OnSetGameTime(callback func(cmd []string) error) {
+	client.registerCallback(setgametime, callback)
 }
 
 func (client *Client) SetGameTime(t time.Duration) error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"setgametime", DurationToString(t)})
+	return client.cmd(setgametime, DurationToString(t))
+}
+
+func (client *Client) OnSetLoadingTimes(callback func(cmd []string) error) {
+	client.registerCallback(setloadingtimes, callback)
 }
 
 func (client *Client) SetLoadingTimes(t time.Duration) error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"setloadingtimes", DurationToString(t)})
+	return client.cmd(setloadingtimes, DurationToString(t))
+}
+
+func (client *Client) OnPauseGameTime(callback func(cmd []string) error) {
+	client.registerCallback(pausegametime, callback)
 }
 
 func (client *Client) PauseGameTime() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"pausegametime"})
+	return client.cmd(pausegametime)
+}
+
+func (client *Client) OnUnpauseGameTime(callback func(cmd []string) error) {
+	client.registerCallback(unpausegametime, callback)
 }
 
 func (client *Client) UnpauseGameTime() error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"unpausegametime"})
+	return client.cmd(unpausegametime)
+}
+
+func (client *Client) OnSetComparison(callback func(cmd []string) error) {
+	client.registerCallback(setcomparison, callback)
 }
 
 func (client *Client) SetComparison(comparison string) error {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.send([]string{"setcomparison", comparison})
+	return client.cmd(setcomparison, comparison)
+}
+
+func (client *Client) OnGetDelta(callback func(cmd []string) error) {
+	client.registerCallback(getdelta, callback)
 }
 
 func (client *Client) GetDelta(comparison string) (string, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecv([]string{"getdelta", comparison})
+	return client.cmdWithResult(getdelta, comparison)
+}
+
+func (client *Client) OnGetLastSplitTime(callback func(cmd []string) error) {
+	client.registerCallback(getlastsplittime, callback)
 }
 
 func (client *Client) GetLastSplitTime() (time.Duration, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecvTime([]string{"getlastsplittime"})
+	return client.cmdWithResultTime(getlastsplittime)
+}
+
+func (client *Client) OnGetComparisonSplitTime(callback func(cmd []string) error) {
+	client.registerCallback(getcomparisonsplittime, callback)
 }
 
 func (client *Client) GetComparisonSplitTime() (time.Duration, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecvTime([]string{"getcomparisonsplittime"})
+	return client.cmdWithResultTime(getcomparisonsplittime)
+}
+
+func (client *Client) OnGetCurrentTime(callback func(cmd []string) error) {
+	client.registerCallback(getcurrenttime, callback)
 }
 
 func (client *Client) GetCurrentTime() (time.Duration, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecvTime([]string{"getcurrenttime"})
+	return client.cmdWithResultTime(getcurrenttime)
+}
+
+func (client *Client) OnGetFinalTime(callback func(cmd []string) error) {
+	client.registerCallback(getfinaltime, callback)
 }
 
 func (client *Client) GetFinalTime(comparison string) (time.Duration, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecvTime([]string{"getfinaltime", comparison})
+	return client.cmdWithResultTime(getfinaltime)
+}
+
+func (client *Client) OnGetPredicatedTime(callback func(cmd []string) error) {
+	client.registerCallback(getpredictedtime, callback)
 }
 
 func (client *Client) GetPredictedTime(comparison string) (time.Duration, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecvTime([]string{"getpredicatedtime", comparison})
+	return client.cmdWithResultTime(getpredictedtime)
+}
+
+func (client *Client) OnGetBestPossibleTime(callback func(cmd []string) error) {
+	client.registerCallback(getbestpossibletime, callback)
 }
 
 func (client *Client) GetBestPossibleTime() (time.Duration, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecvTime([]string{"getbestpossibletime"})
+	return client.cmdWithResultTime(getbestpossibletime)
+}
+
+func (client *Client) OnGetSplitIndex(callback func(cmd []string) error) {
+	client.registerCallback(getsplitindex, callback)
 }
 
 func (client *Client) GetSplitIndex() (int, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecvInt([]string{"getsplitindex"})
+	return client.cmdWithResultInt(getsplitindex)
+}
+
+func (client *Client) OnGetCurrentSplitName(callback func(cmd []string) error) {
+	client.registerCallback(getcurrentsplitname, callback)
 }
 
 func (client *Client) GetCurrentSplitName() (string, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecv([]string{"getcurrentsplitname"})
+	return client.cmdWithResult(getcurrentsplitname)
+}
+
+func (client *Client) OnGetPreviousSplitName(callback func(cmd []string) error) {
+	client.registerCallback(getprevioussplitname, callback)
 }
 
 func (client *Client) GetPreviousSplitName() (string, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	return client.sendAndRecv([]string{"getprevioussplitname"})
+	return client.cmdWithResult(getprevioussplitname)
+}
+
+func (client *Client) OnGetCurrentTimerPhase(callback func(cmd []string) error) {
+	client.registerCallback(getcurrenttimerphase, callback)
 }
 
 func (client *Client) GetCurrentTimerPhase() (TimerPhase, error) {
-	client.m.Lock()
-	defer client.m.Unlock()
-	s, err := client.sendAndRecv([]string{"getcurrenttimerphase"})
+	s, err := client.cmdWithResult(getcurrenttimerphase)
 	if err != nil {
 		return "", err
 	}
@@ -260,72 +327,51 @@ func StringToDuration(t string) (time.Duration, error) {
 	return time.Duration(nanos) * time.Nanosecond * time.Duration(factor), nil
 }
 
-func (client *Client) send(cmd []string) error {
-	if client.sock == nil {
-		if err := client.establishConnection(); err != nil {
-			return err
-		}
+func (client *Client) cmd(cmd ...string) error {
+	client.m.Lock()
+	defer client.m.Unlock()
+	if err := client.sock.send(cmd); err != nil {
+		return err
 	}
-
-	client.sock.SetDeadline(time.Now().Add(timeout))
-	_, err := fmt.Fprintf(client.sock, "%s\r\n", strings.Join(cmd, " "))
-	if err != nil {
-		if reconnectErr := client.establishConnection(); reconnectErr != nil {
-			return err
-		}
-		_, err := fmt.Fprintf(client.sock, "%s\r\n", strings.Join(cmd, " "))
-		if err != nil {
-			return err
-		}
-	}
-	client.sock.SetDeadline(time.Time{})
-	return err
+	client.callCallbacks(cmd)
+	return nil
 }
 
-func (client *Client) recv() (string, error) {
-	if client.sock == nil {
-		if err := client.establishConnection(); err != nil {
-			return "", err
-		}
-	}
-
-	var s string
-	var err error
-
-	client.sock.SetDeadline(time.Now().Add(timeout))
-	s, err = bufio.NewReader(client.sock).ReadString('\n')
+func (client *Client) cmdWithResult(cmd ...string) (string, error) {
+	client.m.Lock()
+	defer client.m.Unlock()
+	s, err := client.sock.sendAndRecv(cmd)
 	if err != nil {
-		if reconnectErr := client.establishConnection(); reconnectErr != nil {
-			return "", err
-		}
-		s, err = bufio.NewReader(client.sock).ReadString('\n')
-		if err != nil {
-			return "", err
-		}
-	}
-	client.sock.SetDeadline(time.Time{})
-	return strings.TrimSuffix(s, "\r\n"), nil
-}
-
-func (client *Client) sendAndRecv(cmd []string) (string, error) {
-	if err := client.send(cmd); err != nil {
 		return "", err
 	}
-	return client.recv()
+	client.callCallbacks(cmd)
+	return s, nil
 }
 
-func (client *Client) sendAndRecvTime(cmd []string) (time.Duration, error) {
-	s, err := client.sendAndRecv(cmd)
+func (client *Client) cmdWithResultInt(cmd ...string) (int, error) {
+	s, err := client.cmdWithResult(cmd...)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(s)
+}
+
+func (client *Client) cmdWithResultTime(cmd ...string) (time.Duration, error) {
+	s, err := client.cmdWithResult(cmd...)
 	if err != nil {
 		return 0, err
 	}
 	return StringToDuration(s)
 }
 
-func (client *Client) sendAndRecvInt(cmd []string) (int, error) {
-	s, err := client.sendAndRecv(cmd)
-	if err != nil {
-		return 0, err
+func (client *Client) registerCallback(name string, callback func(cmd []string) error) {
+	client.callbacks[name] = append(client.callbacks[name], callback)
+}
+
+func (client *Client) callCallbacks(cmd []string) {
+	for _, callback := range client.callbacks[cmd[0]] {
+		if err := callback(cmd); err != nil {
+			log.Printf("error in callback for %s: %v", cmd[0], err)
+		}
 	}
-	return strconv.Atoi(s)
 }
